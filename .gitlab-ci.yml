@@ -1,0 +1,62 @@
+stages:
+  - build
+  - deploy_dev
+  - deploy_prod
+
+variables:
+  CONTAINER_IMAGE: $CI_REGISTRY/$CI_PROJECT_PATH:latest
+  CONTAINER_IMAGE_SHA: $CI_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_SHORT_SHA
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+build:
+  image: docker:20.10
+  stage: build
+  services:
+    - docker:20.10-dind
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry-gitlab.smarthead.ru
+  script:
+    - docker build --tag $CONTAINER_IMAGE --tag $CONTAINER_IMAGE_SHA .
+    - docker push $CONTAINER_IMAGE_SHA
+    - docker push $CONTAINER_IMAGE
+    - docker image prune -a --force
+  only:
+    refs:
+      - main
+  tags:
+    - nodejs
+
+deploy to dev:
+  stage: deploy_dev
+  when: manual
+  only:
+    refs:
+      - main
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry-gitlab.smarthead.ru
+  script:
+    - docker pull $CONTAINER_IMAGE_SHA
+    - docker stop samokat-promo-frontend && docker rm -f samokat-promo-frontend || true
+    - docker run -d -p 4000:8080 --name samokat-promo-frontend  $CONTAINER_IMAGE_SHA
+    - sleep 5
+  tags:
+    - samokat-loto-dev
+
+deploy to prod:
+  stage: deploy_prod
+  when: manual
+  only:
+    refs:
+      - main
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry-gitlab.smarthead.ru
+  script:
+    - docker pull $CONTAINER_IMAGE_SHA
+    - docker stop samokat-promo-frontend && docker rm -f samokat-promo-frontend || true
+    - docker run -d -p 4000:8080 --name samokat-promo-frontend  $CONTAINER_IMAGE_SHA
+    - sleep 5
+  environment:
+    name: production
+  tags:
+    - samokat-loto-prod
